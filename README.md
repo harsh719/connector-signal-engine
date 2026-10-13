@@ -20,16 +20,22 @@ This engine automates that part.
 
 ## What it actually does
 
-Demand signals are public if you know where to look. A company that just posted nine
-nursing roles across three states is telling you, in public, that it has a hiring problem
-right now.
+Demand signals are public if you know where to look. The signal is not that a company is
+hiring, because every company is hiring. It is that a company has been trying to fill the
+same nursing role for four months and cannot.
 
 1. Scans public ATS job boards (Greenhouse, Lever, Ashby) for a vertical's roles
-2. Groups postings into a cluster per employer and scores the cluster
-3. Drops anything below a quality floor
-4. Writes survivors into a queue, deduplicated so the same employer never shows up twice
-5. Tracks each one through `new` to `sent` to `replied` to `accepted`
-6. Hands accepted ones off to wherever you keep contacts
+2. Keeps only postings open between 30 and 365 days, which is the aging-seat window
+3. Groups postings into a cluster per employer and scores the cluster
+4. Drops anything below a quality floor, and any board with more than 400 postings
+5. Writes survivors into a queue, deduplicated so the same employer never shows up twice
+6. Tracks each one through `new` to `sent` to `replied` to `accepted`
+7. Hands accepted ones off to wherever you keep contacts
+
+The full scoring function is in [reference/scoring.md](reference/scoring.md), with the
+reasoning behind each weight. Two of its judgments are worth reading before you write your
+own: sign-on bonuses carry the heaviest weight, and roles concentrated in one state score
+far better than the same roles scattered across eight.
 
 A second signal source, for a wealth-management niche, reads SEC Form 4 and Form 144
 filings: an insider registering a large share sale is a liquidity event with a date on it.
@@ -80,6 +86,39 @@ were real, working boards that would have written junk into the morning queue fo
 Most looked completely fine from the outside.
 
 Do not add a board token without scoring it first.
+
+## What we actually use
+
+Naming the real stack, because "use an email finder" is not useful when you are trying to
+get this working. All of it is swappable and none of it is an endorsement. This is just
+what is running.
+
+| Job | What we use | Swappable for |
+|---|---|---|
+| Build the thing | Claude Code | Any coding agent, or write it yourself |
+| Demand signal | Greenhouse, Lever and Ashby public board APIs | Nothing. These are the source |
+| Wealth-niche signal | SEC EDGAR Form 4 and Form 144 | Nothing, it is the filing system |
+| Finding board tokens | Google, by hand, with `site:` queries | Any SERP API if you want it scripted |
+| Finding the person | AI-ark | Apollo, Clay, or any people-search API |
+| Finding the address | MailTester Ninja | Any finder, but see the note below |
+| Verifying the address | MailTester Ninja, same call | Any verifier |
+| Storage | SQLite | Postgres when you outgrow one laptop |
+
+The two paid pieces split by job. **AI-ark** answers "who do I contact at this company",
+returning a name, title and LinkedIn, and never an email. **MailTester Ninja** answers "what
+is their address", and it is worth understanding how: there is no database being looked up.
+It generates every plausible local part from the name (first.last, flast, first, and so on),
+then validates each one against the mail server in turn and stops at the first mailbox that
+is accepted. Finding and verifying are the same call, which is why there is no separate
+verification step.
+
+That mechanism is also why resolution sits near 50%. A name whose pattern is not in the list,
+or a server that refuses to answer, produces nothing. Expect to lose about half your scored
+candidates here, which is exactly why the schema records `candidates_tried` next to
+`demand_found`.
+
+Statuses that matter, if you swap in a different verifier: only a confirmed-accepted mailbox
+should ever enter a campaign. Catch-all belongs in your records, never in a send.
 
 ## Build it
 

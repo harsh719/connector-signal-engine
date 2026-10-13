@@ -79,21 +79,72 @@ empty result is better than a weak one, because my morning is the scarce resourc
 from 11 candidates should say "found 4, tried 11" rather than looking broken. Most
 candidates die on an unresolvable email and that is normal, not a bug.
 
+## The filter that matters most
+
+Only keep postings that have been open between 30 and 365 days.
+
+```python
+MIN_DAYS_OPEN, MAX_DAYS_OPEN = 30, 365
+```
+
+"They are hiring" is not a signal, every company is hiring. The signal is a seat they have
+been trying to fill and cannot. Under 30 days they are still working it themselves. Over 365
+it is a ghost listing nobody took down.
+
 ## Scoring
 
-Score each employer cluster, and only write it if it clears a floor (start the floor at 55
-and tune it). Signals that earned their place:
+Score the employer cluster, not the individual posting. Use this function. It is tuned, and
+two of the terms are counter-intuitive, so do not simplify them.
 
-- How many relevant roles are open. More open roles is a bigger problem.
-- How recently they were posted. A posting from last week beats one from March.
-- Geographic spread. Roles across several states is a harder problem than one office.
-- Whether the roles are ones a staffing partner can actually place. Keep an explicit
-  allowlist of role phrases per vertical rather than guessing from the title.
-- Whether a signing bonus or referral bonus appears in the posting text. Someone paying a
-  bonus has already admitted they cannot fill it themselves.
+```python
+MAX_BOARD = 400          # bigger boards mean an in-house recruiting team: skip entirely
+MIN_WRITE_SCORE = 55     # below this it never reaches the queue
 
-Score should be an integer so I can sort and set a floor. Keep the function pure and
-testable, separate from anything doing network calls.
+def score_cluster(c):
+    if c["board_size"] > MAX_BOARD:
+        return 0
+
+    real_states = [x for x in c["states"] if x not in ("unknown", "remote")]
+    n = len(real_states)
+    s = 0
+
+    s += min(c["placeable"], 12) * 3
+    s += min(c["bonus_roles"], 10) * 4
+    s += 12 if c["bonus_total_usd"] >= 50000 else (6 if c["bonus_total_usd"] else 0)
+    s += min(int(c["stale_pct"] / 5), 12)
+    s += 8 if c["median_days"] >= 90 else (5 if c["median_days"] >= 60 else 0)
+
+    if n == 1:   s += 10
+    elif n == 2: s += 4
+    elif n >= 6: s -= 10
+    if n == 0:   s -= 8
+
+    return max(0, min(99, s))
+```
+
+The cluster needs these fields: `board_size` (total postings on the board), `placeable`
+(aging seats matching the vertical's role phrases), `bonus_roles` and `bonus_total_usd`
+(parsed from posting text with a `$` regex), `stale_pct` (aging seats as a percentage of the
+whole board), `median_days`, and `states`.
+
+Why the odd terms, so you do not "fix" them:
+
+- **Bonuses weigh most.** A company advertising money has budget, has already tried money,
+  and still cannot fill the seat. Louder than an old posting, which only proves age.
+- **Volume caps at 12.** One desk works so many roles. 600 openings is a different kind of
+  company, not a better lead.
+- **One state scores +10, six or more scores minus 10.** This sells to one staffing partner
+  and a partner works one desk. Concentrated roles are a desk somebody can take. Scattered
+  roles are many small problems nobody wants. Remote-only is worst, since there is no
+  geography to sell.
+
+Parse states against a real state lookup table, not by splitting on the trailing comma.
+Locations arrive as "Grand Rapids", "Ocala FL", "Arlington, Texas", and comma-splitting reads
+city names as states, which inflates the count and corrupts the geography term. Return
+"unknown" rather than guessing.
+
+Keep the function pure with no network calls inside it, so it is testable against saved
+clusters.
 
 ## Config shape
 

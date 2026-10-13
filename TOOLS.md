@@ -46,14 +46,38 @@ at this frequency the cheapest tier covers it.
 The engine finds you a company with a hiring problem. Turning that into a person with an
 email address is the paid part, and you should expect to lose candidates here.
 
-**An email finder.** Measured resolution on public-company executives was about 50%. Plan
-for roughly half your scored candidates to die at this step, which is why the engine reports
-`candidates_tried` next to `demand_found`. Any of the usual vendors work and they are
-interchangeable. Budget per lookup, not per month, until you know your volume.
+Two separate jobs, and we use a different provider for each.
 
-**A verifier,** if you intend to send. Deliverability is its own problem and an unverified
-list will cost you a domain. Only verified-deliverable addresses should go into a sending
-tool. Catch-all results belong in your records, not in a campaign.
+**Finding the person: AI-ark.** Give it a company and it returns a decision maker with name,
+title and LinkedIn. It does not return an email, and that is the right division of labour.
+Keys come from `AIARK_API_KEY`. If no key is set the enrichment step skips rather than
+guessing. Swappable for Apollo, Clay, or any people-search API that takes a domain.
+
+**Finding and verifying the address: MailTester Ninja.** One call does both, and it helps to
+know how it works. There is no database being looked up. It generates every plausible local
+part from the name (first.last, flast, first, f.last and so on), then validates each against
+the mail server in turn, stopping at the first mailbox that is accepted.
+
+That is why resolution sat near 50% on public-company executives. A name whose pattern is
+not in the generated list, or a mail server that refuses to answer, returns nothing. Expect
+to lose about half of your scored candidates here. It is not a bug, and it is exactly why
+the engine records `candidates_tried` alongside `demand_found`.
+
+The statuses it returns, which your sending rule should respect whatever provider you use:
+
+| Result | Meaning | Safe to send |
+|---|---|---|
+| accepted | the mailbox exists | yes |
+| catch-all | the server accepts everything, so this proves nothing | no |
+| rejected | the mailbox does not exist | no |
+| no answer | throttled or blocked | no |
+
+Only an accepted mailbox should enter a campaign. Catch-all belongs in your records, never
+in a send. An unverified list will cost you a sending domain, which is far more expensive
+than the lookups.
+
+Price both per lookup rather than per month until you know your volume, since your bill
+tracks how many candidates clear the score floor, not how many boards you scan.
 
 ## Not needed
 
